@@ -59,19 +59,17 @@ char atca_version[] = { "20160108" };  // change for each release, yyyymmdd
  *  one global device is the one to operate on.
  */
 
-#if defined(__TINY__)
-
 #if defined (ATECC508A_SHARED)
+
 #include <virgil/shared.h>
 #define _gDevice (atecc508a_ctx._gDevice)
 #define _gCommandObj (atecc508a_ctx._gCommandObj)
 #define _gIface (atecc508a_ctx._gIface)
+
 #else
 static ATCADevice _gDevice = NULL;
 static ATCACommand _gCommandObj = NULL;
 static ATCAIface _gIface = NULL;
-#endif
-
 #endif
 
 ATCA_STATUS atcab_request(ATCA_CmdMap command, ATCAPacket * packet, uint8_t check_idle, uint8_t check_error) {
