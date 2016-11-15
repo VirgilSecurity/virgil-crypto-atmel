@@ -53,7 +53,7 @@
 #if defined(__TINY__)
 
 #if defined (ATECC508A_SHARED)
-#include <virgil/shared.h>
+#include <virgil/atecc508a/shared.h>
 #define interface (atecc508a_ctx.interface)
 #else
 struct atca_iface interface;

@@ -49,7 +49,7 @@
 #if defined(__TINY__)
 
 #if defined (ATECC508A_SHARED)
-#include <virgil/shared.h>
+#include <virgil/atecc508a/shared.h>
 #define device (atecc508a_ctx.device)
 #else
 struct atca_device device;

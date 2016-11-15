@@ -58,7 +58,7 @@
 #if defined(__TINY__)
 
 #if defined (ATECC508A_SHARED)
-#include <virgil/shared.h>
+#include <virgil/atecc508a/shared.h>
 #define commands (atecc508a_ctx.commands)
 #else
 struct atca_command commands;

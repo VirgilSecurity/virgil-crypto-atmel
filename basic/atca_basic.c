@@ -61,7 +61,7 @@ char atca_version[] = { "20160108" };  // change for each release, yyyymmdd
 
 #if defined (ATECC508A_SHARED)
 
-#include <virgil/shared.h>
+#include <virgil/atecc508a/shared.h>
 #define _gDevice (atecc508a_ctx._gDevice)
 #define _gCommandObj (atecc508a_ctx._gCommandObj)
 #define _gIface (atecc508a_ctx._gIface)
