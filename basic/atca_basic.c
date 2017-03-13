@@ -72,6 +72,7 @@ static ATCACommand _gCommandObj = NULL;
 static ATCAIface _gIface = NULL;
 #endif
 
+#if !defined(ATECC508A_SHARED_WITH_EXTERNALS)
 ATCA_STATUS atcab_request(ATCA_CmdMap command, ATCAPacket * packet, uint8_t check_idle, uint8_t check_error) {
 	ATCA_STATUS status;
 	uint32_t execution_time;
@@ -111,6 +112,9 @@ ATCA_STATUS atcab_request(ATCA_CmdMap command, ATCAPacket * packet, uint8_t chec
 
 	return status;
 }
+#else
+atcab_request_t atcab_request;
+#endif // ATECC508A_SHARED
 
 /** \brief returns a version string for the CryptoAuthLib release.
  *  The format of the version string returned is "yyyymmdd"

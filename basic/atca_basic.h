@@ -134,6 +134,8 @@ ATCA_STATUS atcab_sha_update(uint16_t length, const uint8_t *message);
 ATCA_STATUS atcab_sha_end(uint8_t *digest, uint16_t length, const uint8_t *message);
 ATCA_STATUS atcab_sha(uint16_t length, const uint8_t *message, uint8_t *digest);
 
+typedef ATCA_STATUS (* atcab_request_t)(ATCA_CmdMap command, ATCAPacket * packet, uint8_t check_idle, uint8_t check_error);
+
 #ifdef __cplusplus
 }
 #endif
