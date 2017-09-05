@@ -53,69 +53,6 @@
 
 char atca_version[] = { "20160108" };  // change for each release, yyyymmdd
 
-/** \brief basic API methods are all prefixed with atcab_  (Atmel CryptoAuth Basic)
- *  the fundamental premise of the basic API is it is based on a single interface
- *  instance and that instance is global, so all basic API commands assume that
- *  one global device is the one to operate on.
- */
-
-#if defined (ATECC508A_SHARED)
-
-#include <virgil/atecc508a/shared.h>
-#define _gDevice (atecc508a_ctx._gDevice)
-#define _gCommandObj (atecc508a_ctx._gCommandObj)
-#define _gIface (atecc508a_ctx._gIface)
-
-#else
-static ATCADevice _gDevice = NULL;
-static ATCACommand _gCommandObj = NULL;
-static ATCAIface _gIface = NULL;
-#endif
-
-#if !defined(ATECC508A_SHARED_WITH_EXTERNALS)
-ATCA_STATUS atcab_request(ATCA_CmdMap command, ATCAPacket * packet, uint8_t check_idle, uint8_t check_error) {
-	ATCA_STATUS status;
-	uint32_t execution_time;
-
-	execution_time = atGetExecTime( _gCommandObj, command);
-
-	if ( (status = atcab_wakeup()) != ATCA_SUCCESS ) return status;
-
-	// send the command
-	if ( (status = atsend( _gIface, (uint8_t*)packet, packet->txsize )) != ATCA_SUCCESS )
-		return status;
-
-	// delay the appropriate amount of time for command to execute
-	atca_delay_ms(execution_time);
-
-	memset(packet->data, 0x00, sizeof(packet->data));
-
-	// receive the response
-	if ( (status = atreceive( _gIface, packet->data, &(packet->rxsize) )) != ATCA_SUCCESS )
-		return status;
-
-	if (packet->rxsize < 4) {
-		if (packet->rxsize > 0)
-			status = ATCA_RX_FAIL;
-		else
-			status = ATCA_RX_NO_RESPONSE;
-		return status;
-	}
-
-	if (check_idle && (status = atcab_idle()) != ATCA_SUCCESS ) {
-		return status;
-	}
-
-	if (check_error) {
-		status = isATCAError(packet->data);
-	}
-
-	return status;
-}
-#else
-atcab_request_t atcab_request;
-#endif // ATECC508A_SHARED
-
 /** \brief returns a version string for the CryptoAuthLib release.
  *  The format of the version string returned is "yyyymmdd"
  * \param[out] verstr ptr to space to receive version string
@@ -128,21 +65,27 @@ ATCA_STATUS atcab_version( char *verstr )
 	return ATCA_SUCCESS;
 }
 
+/** \brief basic API methods are all prefixed with atcab_  (Atmel CryptoAuth Basic)
+ *  the fundamental premise of the basic API is it is based on a single interface
+ *  instance and that instance is global, so all basic API commands assume that
+ *  one global device is the one to operate on.
+ */
+
+ATCADevice _gDevice = NULL;
+ATCACommand _gCommandObj = NULL;
+ATCAIface _gIface = NULL;
+
 /** \brief atcab_init is called once for the life of the application and creates a global ATCADevice object used by Basic API.
  *  This method builds a global ATCADevice instance behinds the scenes that's used for all Basic API operations
  *  \param[in] cfg is a pointer to an interface configuration.  This is usually a predefined configuration found in atca_cfgs.h
  *  \return ATCA_STATUS
  *  \see atcab_init_device()
  */
-ATCA_STATUS atcab_init(
-#if defined(__TINY__)
-		const
-#endif
-ATCAIfaceCfg *cfg )
+ATCA_STATUS atcab_init( ATCAIfaceCfg *cfg )
 {
-#if !defined(__TINY__)
 	if ( _gDevice )     // if there's already a device created, release it
 		atcab_release();
+
 	_gDevice = newATCADevice( cfg );
 	if ( _gDevice == NULL )
 		return ATCA_GEN_FAIL; // Device creation failed
@@ -152,11 +95,6 @@ ATCAIfaceCfg *cfg )
 
 	if ( _gCommandObj == NULL || _gIface == NULL )
 		return ATCA_GEN_FAIL; // More of an assert to make everything was constructed properly
-#else
-	_gDevice = newATCADevice( cfg );
-	_gCommandObj = atGetCommands( _gDevice );
-	_gIface = atGetIFace( _gDevice );
-#endif
 
 	return ATCA_SUCCESS;
 }
@@ -210,6 +148,9 @@ ATCADevice atcab_getDevice(void)
  */
 ATCA_STATUS atcab_wakeup(void)
 {
+	if ( _gDevice == NULL )
+		return ATCA_GEN_FAIL;
+
 	return atwake(_gIface);
 }
 
@@ -218,6 +159,9 @@ ATCA_STATUS atcab_wakeup(void)
  */
 ATCA_STATUS atcab_idle(void)
 {
+	if ( _gDevice == NULL )
+		return ATCA_GEN_FAIL;
+
 	return atidle(_gIface);
 }
 
@@ -226,6 +170,9 @@ ATCA_STATUS atcab_idle(void)
  */
 ATCA_STATUS atcab_sleep(void)
 {
+	if ( _gDevice == NULL )
+		return ATCA_GEN_FAIL;
+
 	return atsleep(_gIface);
 }
 
@@ -334,6 +281,7 @@ ATCA_STATUS atcab_info( uint8_t *revision )
 {
 	ATCAPacket packet;
 	ATCA_STATUS status = ATCA_GEN_FAIL;
+	uint32_t execution_time;
 
 	if ( !_gDevice )
 		return ATCA_GEN_FAIL;
@@ -346,9 +294,33 @@ ATCA_STATUS atcab_info( uint8_t *revision )
 		if ( (status = atInfo( _gCommandObj, &packet )) != ATCA_SUCCESS )
 			break;
 
-		if ((status = atcab_request(CMD_INFO, &packet, 0, 1)) != ATCA_SUCCESS) {
+		execution_time = atGetExecTime( _gCommandObj, CMD_INFO);
+
+		if ( (status = atcab_wakeup()) != ATCA_SUCCESS )
+			break;
+
+		// send the command
+		if ( (status = atsend( _gIface, (uint8_t*)&packet, packet.txsize )) != ATCA_SUCCESS )
+			break;
+
+		// delay the appropriate amount of time for command to execute
+		atca_delay_ms(execution_time);
+
+		// receive the response
+		if ( (status = atreceive( _gIface, &(packet.data[0]), &(packet.rxsize) )) != ATCA_SUCCESS )
+			break;
+
+		// Check response size
+		if (packet.rxsize < 4) {
+			if (packet.rxsize > 0)
+				status = ATCA_RX_FAIL;
+			else
+				status = ATCA_RX_NO_RESPONSE;
 			break;
 		}
+
+		if ( (status = isATCAError(packet.data)) != ATCA_SUCCESS )
+			break;
 
 		memcpy( revision, &packet.data[1], 4 );  // don't include the receive length, only payload
 	} while (0);
@@ -367,6 +339,7 @@ ATCA_STATUS atcab_random(uint8_t *rand_out)
 {
 	ATCA_STATUS status = ATCA_GEN_FAIL;
 	ATCAPacket packet;
+	uint16_t execution_time = 0;
 
 	if ( !_gDevice )
 		return ATCA_GEN_FAIL;
@@ -375,11 +348,34 @@ ATCA_STATUS atcab_random(uint8_t *rand_out)
 	packet.param1 = RANDOM_SEED_UPDATE;
 	packet.param2 = 0x0000;
 	status = atRandom( _gCommandObj, &packet );
+	execution_time = atGetExecTime( _gCommandObj, CMD_RANDOM);
 
 	do {
-		if ((status = atcab_request(CMD_RANDOM, &packet, 0, 1)) != ATCA_SUCCESS) {
+		if ( (status = atcab_wakeup()) != ATCA_SUCCESS )
+			break;
+
+		// send the command
+		if ( (status = atsend( _gIface, (uint8_t*)&packet, packet.txsize )) != ATCA_SUCCESS)
+			break;
+
+		// delay the appropriate amount of time for command to execute
+		atca_delay_ms(execution_time);
+
+		// receive the response
+		if ( (status = atreceive( _gIface, packet.data, &packet.rxsize)) != ATCA_SUCCESS)
+			break;
+
+		// Check response size
+		if (packet.rxsize < 4) {
+			if (packet.rxsize > 0)
+				status = ATCA_RX_FAIL;
+			else
+				status = ATCA_RX_NO_RESPONSE;
 			break;
 		}
+
+		if ( (status = isATCAError(packet.data)) != ATCA_SUCCESS )
+			break;
 
 		memcpy( rand_out, &packet.data[1], 32 );  // data[0] is the length byte of the response
 	} while (0);
@@ -396,6 +392,7 @@ ATCA_STATUS atcab_random(uint8_t *rand_out)
 ATCA_STATUS atcab_genkey( int slot, uint8_t *pubkey )
 {
 	ATCAPacket packet;
+	uint16_t execution_time = 0;
 	ATCA_STATUS status = ATCA_GEN_FAIL;
 
 	// build a genkey command
@@ -406,9 +403,33 @@ ATCA_STATUS atcab_genkey( int slot, uint8_t *pubkey )
 		if ( (status = atGenKey( _gCommandObj, &packet, false )) != ATCA_SUCCESS )
 			break;
 
-		if ((status = atcab_request(CMD_GENKEY, &packet, 0, 1)) != ATCA_SUCCESS) {
+		execution_time = atGetExecTime( _gCommandObj, CMD_GENKEY);
+
+		if ( (status = atcab_wakeup()) != ATCA_SUCCESS )
+			break;
+
+		// send the command
+		if ( (status = atsend( _gIface, (uint8_t*)&packet, packet.txsize )) != ATCA_SUCCESS )
+			break;
+
+		// delay the appropriate amount of time for command to execute
+		atca_delay_ms(execution_time);
+
+		// receive the response
+		if ( (status = atreceive( _gIface, packet.data, &(packet.rxsize) )) != ATCA_SUCCESS )
+			break;
+
+		// Check response size
+		if (packet.rxsize < 4) {
+			if (packet.rxsize > 0)
+				status = ATCA_RX_FAIL;
+			else
+				status = ATCA_RX_NO_RESPONSE;
 			break;
 		}
+
+		if ( (status = isATCAError(packet.data)) != ATCA_SUCCESS )
+			break;
 
 		memcpy(pubkey, &packet.data[1], 64 );
 	} while (0);
@@ -444,6 +465,7 @@ ATCA_STATUS atcab_challenge(const uint8_t *challenge)
 {
 	ATCA_STATUS status = ATCA_GEN_FAIL;
 	ATCAPacket packet;
+	uint16_t execution_time = 0;
 
 	do {
 		// Verify the inputs
@@ -460,10 +482,33 @@ ATCA_STATUS atcab_challenge(const uint8_t *challenge)
 		if ((status = atNonce( _gCommandObj, &packet )) != ATCA_SUCCESS )
 			break;
 
+		execution_time = atGetExecTime( _gCommandObj, CMD_NONCE);
+
+		if ((status = atcab_wakeup()) != ATCA_SUCCESS )
+			break;
+
+		// send the command
+		if ((status = atsend( _gIface, (uint8_t*)&packet, packet.txsize)) != ATCA_SUCCESS )
+			break;
+
+		// delay the appropriate amount of time for command to execute
+		atca_delay_ms(execution_time);
+
+		// receive the response
+		if ((status = atreceive( _gIface, packet.data, &(packet.rxsize))) != ATCA_SUCCESS )
+			break;
+
 		// Check response size
-		if ((status = atcab_request(CMD_NONCE, &packet, 0, 1)) != ATCA_SUCCESS) {
+		if (packet.rxsize < 4) {
+			if (packet.rxsize > 0)
+				status = ATCA_RX_FAIL;
+			else
+				status = ATCA_RX_NO_RESPONSE;
 			break;
 		}
+
+		if ( (status = isATCAError(packet.data)) != ATCA_SUCCESS )
+			break;
 
 	} while (0);
 
@@ -480,6 +525,7 @@ ATCA_STATUS atcab_challenge_seed_update( const uint8_t *seed, uint8_t* rand_out 
 {
 	ATCA_STATUS status = ATCA_GEN_FAIL;
 	ATCAPacket packet;
+	uint16_t execution_time = 0;
 
 	do {
 		// Verify the inputs
@@ -495,9 +541,29 @@ ATCA_STATUS atcab_challenge_seed_update( const uint8_t *seed, uint8_t* rand_out 
 
 		if ((status = atNonce(_gCommandObj, &packet)) != ATCA_SUCCESS) break;
 
-		if ((status = atcab_request(CMD_NONCE, &packet, 0, 1)) != ATCA_SUCCESS) {
+		execution_time = atGetExecTime(_gCommandObj, CMD_NONCE);
+
+		if ((status = atcab_wakeup()) != ATCA_SUCCESS ) break;
+
+		// send the command
+		if ( (status = atsend( _gIface, (uint8_t*)&packet, packet.txsize)) != ATCA_SUCCESS ) break;
+
+		// delay the appropriate amount of time for command to execute
+		atca_delay_ms(execution_time);
+
+		// receive the response
+		if ((status = atreceive(_gIface, packet.data, &(packet.rxsize))) != ATCA_SUCCESS) break;
+
+		// Check response size
+		if (packet.rxsize < 4) {
+			if (packet.rxsize > 0)
+				status = ATCA_RX_FAIL;
+			else
+				status = ATCA_RX_NO_RESPONSE;
 			break;
 		}
+
+		if ((status = isATCAError(packet.data)) != ATCA_SUCCESS) break;
 
 		memcpy(&rand_out[0], &packet.data[ATCA_RSP_DATA_IDX], 32);
 
@@ -563,6 +629,7 @@ ATCA_STATUS atcab_verify_extern(const uint8_t *message, const uint8_t *signature
 {
 	ATCA_STATUS status;
 	ATCAPacket packet;
+	uint16_t execution_time = 0;
 
 	do {
 		*verified = false;
@@ -580,13 +647,33 @@ ATCA_STATUS atcab_verify_extern(const uint8_t *message, const uint8_t *signature
 		if ( (status = atVerify( _gCommandObj, &packet )) != ATCA_SUCCESS )
 			break;
 
-		*verified = false;
-		if ((status = atcab_request(CMD_VERIFY, &packet, 0, 1)) != ATCA_SUCCESS) {
+		execution_time = atGetExecTime( _gCommandObj, CMD_VERIFY );
+
+		if ( (status = atcab_wakeup()) != ATCA_SUCCESS )
+			break;
+
+		// send the command
+		if ( (status = atsend( _gIface, (uint8_t*)&packet, packet.txsize )) != ATCA_SUCCESS )
+			break;
+
+		// delay the appropriate amount of time for command to execute
+		atca_delay_ms(execution_time);
+
+		// receive the response
+		if ( (status = atreceive( _gIface, packet.data, &(packet.rxsize) )) != ATCA_SUCCESS )
+			break;
+
+		// Check response size
+		if (packet.rxsize < 4) {
+			if (packet.rxsize > 0)
+				status = ATCA_RX_FAIL;
+			else
+				status = ATCA_RX_NO_RESPONSE;
 			break;
 		}
 
-		*verified = true;
-
+		status = isATCAError(packet.data);
+		*verified = (status == 0);
 		if (status == ATCA_CHECKMAC_VERIFY_FAILED)
 			status = ATCA_SUCCESS; // Verify failed, but command succeeded
 	} while (0);
@@ -605,6 +692,7 @@ ATCA_STATUS atcab_ecdh(uint16_t key_id, const uint8_t* pubkey, uint8_t* ret_ecdh
 {
 	ATCA_STATUS status;
 	ATCAPacket packet;
+	uint16_t execution_time = 0;
 
 	do {
 		if (pubkey == NULL || ret_ecdh == NULL) {
@@ -620,9 +708,26 @@ ATCA_STATUS atcab_ecdh(uint16_t key_id, const uint8_t* pubkey, uint8_t* ret_ecdh
 
 		if ( (status = atECDH( _gCommandObj, &packet )) != ATCA_SUCCESS ) break;
 
-		if ((status = atcab_request(CMD_ECDH, &packet, 0, 1)) != ATCA_SUCCESS) {
+		execution_time = atGetExecTime( _gCommandObj, CMD_ECDH);
+
+		if ( (status = atcab_wakeup()) != ATCA_SUCCESS ) break;
+
+		if ( (status = atsend(_gIface, (uint8_t*)&packet, packet.txsize)) != ATCA_SUCCESS ) break;
+
+		atca_delay_ms(execution_time);
+
+		if ((status = atreceive(_gIface, packet.data, &packet.rxsize)) != ATCA_SUCCESS) break;
+
+		// Check response size
+		if (packet.rxsize < 4) {
+			if (packet.rxsize > 0)
+				status = ATCA_RX_FAIL;
+			else
+				status = ATCA_RX_NO_RESPONSE;
 			break;
 		}
+
+		if ( (status = isATCAError(packet.data)) != ATCA_SUCCESS ) break;
 
 		// The ECDH command may return a single byte. Then the CRC is copied into indices [1:2]
 		memcpy(ret_ecdh, &packet.data[ATCA_RSP_DATA_IDX], ATCA_KEY_SIZE);
@@ -807,6 +912,7 @@ ATCA_STATUS atcab_write_zone(uint8_t zone, uint8_t slot, uint8_t block, uint8_t 
 	ATCA_STATUS status = ATCA_GEN_FAIL;
 	ATCAPacket packet;
 	uint16_t addr;
+	uint16_t execution_time = 0;
 
 	// Check the input parameters
 	if (data == NULL)
@@ -832,9 +938,32 @@ ATCA_STATUS atcab_write_zone(uint8_t zone, uint8_t slot, uint8_t block, uint8_t 
 		if ( (status = atWrite( _gCommandObj, &packet )) != ATCA_SUCCESS )
 			break;
 
-		if ((status = atcab_request(CMD_WRITEMEM, &packet, 0, 1)) != ATCA_SUCCESS) {
+		execution_time = atGetExecTime( _gCommandObj, CMD_WRITEMEM);
+
+		if ( (status = atcab_wakeup()) != ATCA_SUCCESS )
+			break;
+
+		// send the command
+		if ( (status = atsend( _gIface, (uint8_t*)&packet, packet.txsize )) != ATCA_SUCCESS )
+			break;
+
+		// delay the appropriate amount of time for command to execute
+		atca_delay_ms(execution_time);
+
+		// receive the response
+		if ( (status = atreceive( _gIface, packet.data, &(packet.rxsize) )) != ATCA_SUCCESS )
+			break;
+
+		// Check response size
+		if (packet.rxsize < 4) {
+			if (packet.rxsize > 0)
+				status = ATCA_RX_FAIL;
+			else
+				status = ATCA_RX_NO_RESPONSE;
 			break;
 		}
+
+		status = isATCAError(packet.data);
 
 	} while (0);
 
@@ -862,6 +991,7 @@ ATCA_STATUS atcab_read_zone(uint8_t zone, uint8_t slot, uint8_t block, uint8_t o
 	ATCA_STATUS status = ATCA_SUCCESS;
 	ATCAPacket packet;
 	uint16_t addr;
+	uint16_t execution_time = 0;
 
 	do {
 		// Check the input parameters
@@ -886,9 +1016,32 @@ ATCA_STATUS atcab_read_zone(uint8_t zone, uint8_t slot, uint8_t block, uint8_t o
 		if ( (status = atRead( _gCommandObj, &packet )) != ATCA_SUCCESS )
 			break;
 
-		if ((status = atcab_request(CMD_READMEM, &packet, 0, 1)) != ATCA_SUCCESS) {
+		execution_time = atGetExecTime( _gCommandObj, CMD_READMEM);
+
+		if ( (status = atcab_wakeup()) != ATCA_SUCCESS ) break;
+
+		// send the command
+		if ( (status = atsend( _gIface, (uint8_t*)&packet, packet.txsize )) != ATCA_SUCCESS )
+			break;
+
+		// delay the appropriate amount of time for command to execute
+		atca_delay_ms(execution_time);
+
+		// receive the response
+		if ( (status = atreceive( _gIface, packet.data, &(packet.rxsize) )) != ATCA_SUCCESS )
+			break;
+
+		// Check response size
+		if (packet.rxsize < 4) {
+			if (packet.rxsize > 0)
+				status = ATCA_RX_FAIL;
+			else
+				status = ATCA_RX_NO_RESPONSE;
 			break;
 		}
+
+		if ( (status = isATCAError(packet.data)) != ATCA_SUCCESS )
+			break;
 
 		memcpy( data, &packet.data[1], len );
 	} while (0);
@@ -987,6 +1140,7 @@ ATCA_STATUS atcab_write_enc(uint8_t slotid, uint8_t block, const uint8_t *data, 
 	uint8_t cipher_text[ATCA_KEY_SIZE] = { 0 };
 	ATCAPacket packet;
 	uint16_t addr;
+	uint16_t execution_time = 0;
 
 	do {
 		// Verify inputs parameters
@@ -1041,9 +1195,29 @@ ATCA_STATUS atcab_write_enc(uint8_t slotid, uint8_t block, const uint8_t *data, 
 
 		if ((status = atWriteEnc(_gCommandObj, &packet)) != ATCA_SUCCESS) BREAK(status, "format write command bytes failed");
 
-		if ((status = atcab_request(CMD_WRITEMEM, &packet, 0, 1)) != ATCA_SUCCESS) {
+		execution_time = atGetExecTime(_gCommandObj, CMD_WRITEMEM);
+
+		if ((status = atcab_wakeup()) != ATCA_SUCCESS) BREAK(status, "wakeup failed");
+
+		// send the command
+		if ((status = atsend(_gIface, (uint8_t*)&packet, packet.txsize)) != ATCA_SUCCESS) BREAK(status, "send write command bytes failed");
+
+		// delay the appropriate amount of time for command to execute
+		atca_delay_ms(execution_time);
+
+		// receive the response
+		if ((status = atreceive(_gIface, packet.data, &(packet.rxsize))) != ATCA_SUCCESS) BREAK(status, "receive write command bytes failed");
+
+		// Check response size
+		if (packet.rxsize < 4) {
+			if (packet.rxsize > 0)
+				status = ATCA_RX_FAIL;
+			else
+				status = ATCA_RX_NO_RESPONSE;
 			break;
 		}
+
+		status = isATCAError(packet.data);
 
 	} while (0);
 
@@ -1063,6 +1237,7 @@ ATCA_STATUS atcab_read_ecc_config_zone(uint8_t* config_data)
 {
 	ATCA_STATUS status = ATCA_GEN_FAIL;
 	ATCAPacket packet;
+	uint16_t execution_time = 0;
 	uint8_t zone = 0, block = 0, offset = 0, slot = 0, index = 0;
 	uint16_t addr = 0x0000;
 
@@ -1078,10 +1253,39 @@ ATCA_STATUS atcab_read_ecc_config_zone(uint8_t* config_data)
 
 			packet.param2 =  addr;
 			status = atRead(_gCommandObj, &packet);
+			execution_time = atGetExecTime( _gCommandObj, CMD_READMEM);
 
-			if ((status = atcab_request(CMD_READMEM, &packet, 1, 1)) != ATCA_SUCCESS) {
+			if ( (status = atcab_wakeup()) != ATCA_SUCCESS )
+				break;
+
+			// send the command
+			if ( (status = atsend( _gIface, (uint8_t*)&packet, packet.txsize )) != ATCA_SUCCESS )
+				break;
+
+			// delay the appropriate amount of time for command to execute
+			atca_delay_ms(execution_time);
+
+			memset(packet.data, 0x00, 130);
+
+			// receive the response
+			if ( (status = atreceive( _gIface, packet.data, &packet.rxsize)) != ATCA_SUCCESS )
+				break;
+
+			// Check response size
+			if (packet.rxsize < 4) {
+				if (packet.rxsize > 0)
+					status = ATCA_RX_FAIL;
+				else
+					status = ATCA_RX_NO_RESPONSE;
 				break;
 			}
+
+			if ( (status = atcab_idle()) != ATCA_SUCCESS )
+				break;
+
+			// check for error in response
+			if ( (status = isATCAError(packet.data)) != ATCA_SUCCESS )
+				break;
 
 			// update the word address after reading each block
 			++offset;
@@ -1103,10 +1307,38 @@ ATCA_STATUS atcab_read_ecc_config_zone(uint8_t* config_data)
 
 			packet.param2 =  addr;
 			status = atRead(_gCommandObj, &packet);
+			execution_time = atGetExecTime( _gCommandObj, CMD_READMEM);
 
-			if ((status = atcab_request(CMD_READMEM, &packet, 1, 1)) != ATCA_SUCCESS) {
+			if ( (status = atcab_wakeup()) != ATCA_SUCCESS ) break;
+
+			// send the command
+			if ( (status = atsend( _gIface, (uint8_t*)&packet, packet.txsize )) != ATCA_SUCCESS )
+				break;
+
+			// delay the appropriate amount of time for command to execute
+			atca_delay_ms(execution_time);
+
+			memset(packet.data, 0x00, sizeof(packet.data));
+
+			// receive the response
+			if ( (status = atreceive( _gIface, packet.data, &packet.rxsize)) != ATCA_SUCCESS )
+				break;
+
+			// Check response size
+			if (packet.rxsize < 4) {
+				if (packet.rxsize > 0)
+					status = ATCA_RX_FAIL;
+				else
+					status = ATCA_RX_NO_RESPONSE;
 				break;
 			}
+
+			if ( (status = atcab_idle()) != ATCA_SUCCESS )
+				break;
+
+			// check for error in response
+			if ( (status = isATCAError(packet.data)) != ATCA_SUCCESS )
+				break;
 
 			// update the word address after reading each block
 			++block;
@@ -1130,6 +1362,7 @@ ATCA_STATUS atcab_write_ecc_config_zone(const uint8_t* config_data)
 {
 	ATCA_STATUS status = ATCA_GEN_FAIL;
 	ATCAPacket packet;
+	uint16_t execution_time = 0;
 	uint8_t zone = 0, block = 0, offset = 0, slot = 0, index = 0;
 	uint16_t addr = 0;
 
@@ -1150,10 +1383,34 @@ ATCA_STATUS atcab_write_ecc_config_zone(const uint8_t* config_data)
 				memcpy(&packet.data[0], &config_data[index + 16], ATCA_WORD_SIZE);
 				index += ATCA_WORD_SIZE;
 				status = atWrite(_gCommandObj, &packet);
+				execution_time = atGetExecTime( _gCommandObj, CMD_WRITEMEM);
 
-				if ((status = atcab_request(CMD_WRITEMEM, &packet, 1, 1)) != ATCA_SUCCESS) {
+				if ( (status = atcab_wakeup()) != ATCA_SUCCESS ) break;
+
+				// send the command
+				if ( (status = atsend( _gIface, (uint8_t*)&packet, packet.txsize )) != ATCA_SUCCESS )
+					break;
+
+				// delay the appropriate amount of time for command to execute
+				atca_delay_ms(execution_time);
+
+				// receive the response
+				if ( (status = atreceive( _gIface, packet.data, &packet.rxsize)) != ATCA_SUCCESS )
+					break;
+
+				// Check response size
+				if (packet.rxsize < 4) {
+					if (packet.rxsize > 0)
+						status = ATCA_RX_FAIL;
+					else
+						status = ATCA_RX_NO_RESPONSE;
 					break;
 				}
+
+				if ( (status = atcab_idle()) != ATCA_SUCCESS ) break;
+
+				if ( (status = isATCAError(packet.data)) != ATCA_SUCCESS )
+					break;
 
 				// update the offset address after reading each block
 				++offset;
@@ -1177,9 +1434,34 @@ ATCA_STATUS atcab_write_ecc_config_zone(const uint8_t* config_data)
 			if ( (status = atWrite(_gCommandObj, &packet)) != ATCA_SUCCESS )
 				break;
 
-			if ((status = atcab_request(CMD_WRITEMEM, &packet, 1, 1)) != ATCA_SUCCESS) {
+			execution_time = atGetExecTime( _gCommandObj, CMD_WRITEMEM);
+
+			if ( (status = atcab_wakeup()) != ATCA_SUCCESS ) break;
+
+			// send the command
+			if ( (status = atsend( _gIface, (uint8_t*)&packet, packet.txsize )) != ATCA_SUCCESS )
+				break;
+
+			// delay the appropriate amount of time for command to execute
+			atca_delay_ms(execution_time);
+
+			// receive the response
+			if ( (status = atreceive( _gIface, packet.data, &packet.rxsize)) != ATCA_SUCCESS )
+				break;
+
+			// Check response size
+			if (packet.rxsize < 4) {
+				if (packet.rxsize > 0)
+					status = ATCA_RX_FAIL;
+				else
+					status = ATCA_RX_NO_RESPONSE;
 				break;
 			}
+
+			if ( (status = atcab_idle()) != ATCA_SUCCESS ) break;
+
+			if ( (status = isATCAError(packet.data)) != ATCA_SUCCESS )
+				break;
 
 			// update the word address after completely reading each block
 			++block; offset = 0;
@@ -1344,6 +1626,7 @@ ATCA_STATUS atcab_lock_config_zone(uint8_t* lock_response)
 {
 	ATCA_STATUS status = ATCA_GEN_FAIL;
 	ATCAPacket packet;
+	uint16_t execution_time = 0;
 
 	// build command for lock zone and send
 	packet.param1 = LOCK_ZONE_NO_CRC | LOCK_ZONE_CONFIG;
@@ -1351,9 +1634,33 @@ ATCA_STATUS atcab_lock_config_zone(uint8_t* lock_response)
 	do {
 		if ( (status = atLock(_gCommandObj, &packet)) != ATCA_SUCCESS ) break;
 
-		if ((status = atcab_request(CMD_LOCK, &packet, 0, 1)) != ATCA_SUCCESS) {
+		execution_time = atGetExecTime( _gCommandObj, CMD_LOCK);
+
+		if ( (status = atcab_wakeup()) != ATCA_SUCCESS ) break;
+
+		// send the command
+		if ( (status = atsend( _gIface, (uint8_t*)&packet, packet.txsize )) != ATCA_SUCCESS )
+			break;
+
+		// delay the appropriate amount of time for command to execute
+		atca_delay_ms(execution_time);
+
+		// receive the response
+		if ( (status = atreceive( _gIface, packet.data, &packet.rxsize)) != ATCA_SUCCESS )
+			break;
+
+		// Check response size
+		if (packet.rxsize < 4) {
+			if (packet.rxsize > 0)
+				status = ATCA_RX_FAIL;
+			else
+				status = ATCA_RX_NO_RESPONSE;
 			break;
 		}
+
+		//check the response for error
+		if ( (status = isATCAError(packet.data)) != ATCA_SUCCESS )
+			break;
 
 		memcpy(lock_response, &packet.data[1], 1);
 	} while (0);
@@ -1373,6 +1680,7 @@ ATCA_STATUS atcab_lock_data_zone(uint8_t* lock_response)
 {
 	ATCA_STATUS status = ATCA_GEN_FAIL;
 	ATCAPacket packet;
+	uint16_t execution_time = 0;
 
 	// build command for lock zone and send
 	packet.param1 = LOCK_ZONE_NO_CRC | LOCK_ZONE_DATA;
@@ -1380,10 +1688,33 @@ ATCA_STATUS atcab_lock_data_zone(uint8_t* lock_response)
 
 	do {
 		status = atLock(_gCommandObj, &packet);
+		execution_time = atGetExecTime( _gCommandObj, CMD_LOCK);
 
-		if ((status = atcab_request(CMD_LOCK, &packet, 0, 1)) != ATCA_SUCCESS) {
+		if ((status = atcab_wakeup()) != ATCA_SUCCESS ) break;
+
+		// send the command
+		if ((status = atsend( _gIface, (uint8_t*)&packet, packet.txsize )) != ATCA_SUCCESS )
+			break;
+
+		// delay the appropriate amount of time for command to execute
+		atca_delay_ms(execution_time);
+
+		// receive the response
+		if ((status = atreceive( _gIface, packet.data, &packet.rxsize)) != ATCA_SUCCESS )
+			break;
+
+		// Check response size
+		if (packet.rxsize < 4) {
+			if (packet.rxsize > 0)
+				status = ATCA_RX_FAIL;
+			else
+				status = ATCA_RX_NO_RESPONSE;
 			break;
 		}
+
+		//check the response for error
+		if ((status = isATCAError(packet.data)) != ATCA_SUCCESS )
+			break;
 
 		memcpy(lock_response, &packet.data[1], 1);
 	} while (0);
@@ -1403,6 +1734,7 @@ ATCA_STATUS atcab_lock_data_slot(uint8_t slot, uint8_t* lock_response)
 {
 	ATCA_STATUS status = ATCA_GEN_FAIL;
 	ATCAPacket packet;
+	uint16_t execution_time = 0;
 
 	// build command for lock slot and send
 	packet.param1 = (slot << 2) | LOCK_ZONE_DATA_SLOT;
@@ -1411,9 +1743,33 @@ ATCA_STATUS atcab_lock_data_slot(uint8_t slot, uint8_t* lock_response)
 	do {
 		if ( (status = atLock(_gCommandObj, &packet)) != ATCA_SUCCESS ) break;
 
-		if ((status = atcab_request(CMD_LOCK, &packet, 0, 1)) != ATCA_SUCCESS) {
+		execution_time = atGetExecTime( _gCommandObj, CMD_LOCK);
+
+		if ( (status = atcab_wakeup()) != ATCA_SUCCESS ) break;
+
+		// send the command
+		if ( (status = atsend( _gIface, (uint8_t*)&packet, packet.txsize )) != ATCA_SUCCESS )
+			break;
+
+		// delay the appropriate amount of time for command to execute
+		atca_delay_ms(execution_time);
+
+		// receive the response
+		if ( (status = atreceive( _gIface, packet.data, &packet.rxsize)) != ATCA_SUCCESS )
+			break;
+
+		// Check response size
+		if (packet.rxsize < 4) {
+			if (packet.rxsize > 0)
+				status = ATCA_RX_FAIL;
+			else
+				status = ATCA_RX_NO_RESPONSE;
 			break;
 		}
+
+		//check the response for error
+		if ( (status = isATCAError(packet.data)) != ATCA_SUCCESS )
+			break;
 
 		memcpy(lock_response, &packet.data[1], 1);
 	} while (0);
@@ -1432,6 +1788,7 @@ ATCA_STATUS atcab_sign(uint16_t slot, const uint8_t *msg, uint8_t *signature)
 {
 	ATCA_STATUS status = ATCA_GEN_FAIL;
 	ATCAPacket packet;
+	uint16_t execution_time = 0;
 	uint8_t randomnum[64];
 
 	if ( !_gDevice )
@@ -1447,10 +1804,33 @@ ATCA_STATUS atcab_sign(uint16_t slot, const uint8_t *msg, uint8_t *signature)
 		if ( (status = atSign( _gCommandObj, &packet )) != ATCA_SUCCESS )
 			break;
 
+		execution_time = atGetExecTime( _gCommandObj, CMD_SIGN);
+
+		if ( (status != atcab_wakeup()) != ATCA_SUCCESS ) break;
+
+		// send the command
+		if ( (status = atsend( _gIface, (uint8_t*)&packet, packet.txsize )) != ATCA_SUCCESS )
+			break;
+
+		// delay the appropriate amount of time for command to execute
+		atca_delay_ms(execution_time);
+
+		// receive the response
+		if ( (status = atreceive( _gIface, packet.data, &(packet.rxsize))) != ATCA_SUCCESS )
+			break;
+
 		// Check response size
-		if ((status = atcab_request(CMD_SIGN, &packet, 0, 1)) != ATCA_SUCCESS) {
+		if (packet.rxsize < 4) {
+			if (packet.rxsize > 0)
+				status = ATCA_RX_FAIL;
+			else
+				status = ATCA_RX_NO_RESPONSE;
 			break;
 		}
+
+		// check for response
+		if ( (status = isATCAError(packet.data)) != ATCA_SUCCESS )
+			break;
 
 		memcpy( signature, &packet.data[1], ATCA_SIG_SIZE );
 	} while (0);
@@ -1493,6 +1873,7 @@ ATCA_STATUS atcab_gendig_host(uint8_t zone, uint16_t key_id, uint8_t *other_data
 {
 	ATCA_STATUS status = ATCA_GEN_FAIL;
 	ATCAPacket packet;
+	uint16_t execution_time = 0;
 	bool hasMACKey = 0;
 
 	if ( !_gDevice || other_data == NULL )
@@ -1514,9 +1895,33 @@ ATCA_STATUS atcab_gendig_host(uint8_t zone, uint16_t key_id, uint8_t *other_data
 		if ( (status = atGenDig( _gCommandObj, &packet, hasMACKey)) != ATCA_SUCCESS )
 			break;
 
-		if ((status = atcab_request(CMD_GENDIG, &packet, 0, 1)) != ATCA_SUCCESS) {
+		execution_time = atGetExecTime( _gCommandObj, CMD_GENDIG);
+
+		if ( (status != atcab_wakeup()) != ATCA_SUCCESS ) break;
+
+		// send the command
+		if ( (status = atsend( _gIface, (uint8_t*)&packet, packet.txsize )) != ATCA_SUCCESS )
+			break;
+
+		// delay the appropriate amount of time for command to execute
+		atca_delay_ms(execution_time);
+
+		// receive the response
+		if ( (status = atreceive( _gIface, packet.data, &(packet.rxsize))) != ATCA_SUCCESS )
+			break;
+
+		// Check response size
+		if (packet.rxsize < 4) {
+			if (packet.rxsize > 0)
+				status = ATCA_RX_FAIL;
+			else
+				status = ATCA_RX_NO_RESPONSE;
 			break;
 		}
+
+		// check for response
+		if ( (status = isATCAError(packet.data)) != ATCA_SUCCESS )
+			break;
 
 	} while (0);
 
@@ -1587,6 +1992,7 @@ ATCA_STATUS atcab_calc_pubkey(uint8_t privSlotId, uint8_t *pubkey)
 ATCA_STATUS atcab_get_pubkey(uint8_t privSlotId, uint8_t *pubkey)
 {
 	ATCAPacket packet;
+	uint16_t execution_time = 0;
 	ATCA_STATUS status = ATCA_GEN_FAIL;
 
 	do {
@@ -1596,9 +2002,32 @@ ATCA_STATUS atcab_get_pubkey(uint8_t privSlotId, uint8_t *pubkey)
 
 		if ( (status = atGenKey( _gCommandObj, &packet, false )) != ATCA_SUCCESS ) break;
 
-		if ((status = atcab_request(CMD_GENKEY, &packet, 0, 1)) != ATCA_SUCCESS) {
+		execution_time = atGetExecTime( _gCommandObj, CMD_GENKEY);
+
+		if ( (status = atcab_wakeup()) != ATCA_SUCCESS ) break;
+
+		// send the command
+		if ( (status = atsend( _gIface, (uint8_t*)&packet, packet.txsize )) != ATCA_SUCCESS )
+			break;
+
+		// delay the appropriate amount of time for command to execute
+		atca_delay_ms(execution_time);
+
+		// receive the response
+		if ( (status = atreceive( _gIface, packet.data, &(packet.rxsize) )) != ATCA_SUCCESS )
+			break;
+
+		// Check response size
+		if (packet.rxsize < 4) {
+			if (packet.rxsize > 0)
+				status = ATCA_RX_FAIL;
+			else
+				status = ATCA_RX_NO_RESPONSE;
 			break;
 		}
+
+		if ( (status = isATCAError(packet.data)) != ATCA_SUCCESS )
+			break;
 
 		// copy the response public key data
 		memcpy(pubkey, &packet.data[1], 64 );
@@ -1627,6 +2056,7 @@ ATCA_STATUS atcab_priv_write(uint8_t slot, const uint8_t priv_key[36], uint8_t w
 	uint8_t randout[RANDOM_NUM_SIZE] = { 0 };
 	uint8_t cipher_text[36] = { 0 };
 	uint8_t host_mac[MAC_SIZE] = { 0 };
+	uint16_t execution_time = 0;
 	uint8_t privKey[36];
 	uint8_t writeKey[32];
 
@@ -1692,9 +2122,32 @@ ATCA_STATUS atcab_priv_write(uint8_t slot, const uint8_t priv_key[36], uint8_t w
 		if ((status = atPrivWrite(_gCommandObj, &packet)) != ATCA_SUCCESS)
 			break;
 
-		if ((status = atcab_request(CMD_PRIVWRITE, &packet, 0, 1)) != ATCA_SUCCESS) {
+		execution_time = atGetExecTime(_gCommandObj, CMD_PRIVWRITE);
+
+		if ( (status = atcab_wakeup()) != ATCA_SUCCESS ) break;
+
+		// send the command
+		if ((status = atsend(_gIface, (uint8_t*)&packet, packet.txsize)) != ATCA_SUCCESS)
+			break;
+
+		// delay the appropriate amount of time for command to execute
+		atca_delay_ms(execution_time);
+
+		// receive the response
+		if ((status = atreceive(_gIface, packet.data, &packet.rxsize)) != ATCA_SUCCESS)
+			break;
+
+		// Check response size
+		if (packet.rxsize < 4) {
+			if (packet.rxsize > 0)
+				status = ATCA_RX_FAIL;
+			else
+				status = ATCA_RX_NO_RESPONSE;
 			break;
 		}
+
+		if ( (status = isATCAError(packet.data)) != ATCA_SUCCESS )
+			break;
 
 	} while (0);
 
@@ -2123,6 +2576,7 @@ ATCA_STATUS atcab_mac( uint8_t mode, uint16_t key_id, const uint8_t* challenge, 
 {
 	ATCA_STATUS status = ATCA_GEN_FAIL;
 	ATCAPacket packet;
+	uint16_t execution_time = 0;
 
 	do {
 
@@ -2140,9 +2594,33 @@ ATCA_STATUS atcab_mac( uint8_t mode, uint16_t key_id, const uint8_t* challenge, 
 		if ( (status = atMAC( _gCommandObj, &packet )) != ATCA_SUCCESS )
 			break;
 
-		if ((status = atcab_request(CMD_MAC, &packet, 0, 1)) != ATCA_SUCCESS) {
+		execution_time = atGetExecTime( _gCommandObj, CMD_MAC);
+
+		if ( (status != atcab_wakeup()) != ATCA_SUCCESS ) break;
+
+		// send the command
+		if ( (status = atsend( _gIface, (uint8_t*)&packet, packet.txsize )) != ATCA_SUCCESS )
+			break;
+
+		// delay the appropriate amount of time for command to execute
+		atca_delay_ms(execution_time);
+
+		// receive the response
+		if ( (status = atreceive( _gIface, packet.data, &(packet.rxsize))) != ATCA_SUCCESS )
+			break;
+
+		// Check response size
+		if (packet.rxsize < 4) {
+			if (packet.rxsize > 0)
+				status = ATCA_RX_FAIL;
+			else
+				status = ATCA_RX_NO_RESPONSE;
 			break;
 		}
+
+		// check for response
+		if ( (status = isATCAError(packet.data)) != ATCA_SUCCESS )
+			break;
 
 		memcpy( digest, &packet.data[ATCA_RSP_DATA_IDX], MAC_SIZE );
 
@@ -2164,6 +2642,7 @@ ATCA_STATUS atcab_checkmac( uint8_t mode, uint16_t key_id, const uint8_t *challe
 {
 	ATCA_STATUS status = ATCA_GEN_FAIL;
 	ATCAPacket packet;
+	uint16_t execution_time = 0;
 
 	do {
 
@@ -2183,9 +2662,33 @@ ATCA_STATUS atcab_checkmac( uint8_t mode, uint16_t key_id, const uint8_t *challe
 		if ( (status = atCheckMAC( _gCommandObj, &packet )) != ATCA_SUCCESS )
 			break;
 
-		if ((status = atcab_request(CMD_CHECKMAC, &packet, 0, 1)) != ATCA_SUCCESS) {
+		execution_time = atGetExecTime( _gCommandObj, CMD_CHECKMAC);
+
+		if ( (status != atcab_wakeup()) != ATCA_SUCCESS ) break;
+
+		// send the command
+		if ( (status = atsend( _gIface, (uint8_t*)&packet, packet.txsize )) != ATCA_SUCCESS )
+			break;
+
+		// delay the appropriate amount of time for command to execute
+		atca_delay_ms( execution_time );
+
+		// receive the response
+		if ( (status = atreceive( _gIface, packet.data, &(packet.rxsize))) != ATCA_SUCCESS )
+			break;
+
+		// Check response size
+		if (packet.rxsize < 4) {
+			if (packet.rxsize > 0)
+				status = ATCA_RX_FAIL;
+			else
+				status = ATCA_RX_NO_RESPONSE;
 			break;
 		}
+
+		// check for response
+		if ( (status = isATCAError(packet.data)) != ATCA_SUCCESS )
+			break;
 
 	} while (0);
 
@@ -2200,6 +2703,7 @@ ATCA_STATUS atcab_sha_start(void)
 {
 	ATCA_STATUS status = ATCA_GEN_FAIL;
 	ATCAPacket packet;
+	uint16_t execution_time = 0;
 
 	do {
 
@@ -2210,9 +2714,34 @@ ATCA_STATUS atcab_sha_start(void)
 		if ( (status = atSHA( _gCommandObj, &packet )) != ATCA_SUCCESS )
 			break;
 
-		if ((status = atcab_request(CMD_SHA, &packet, 0, 1)) != ATCA_SUCCESS) {
+		execution_time = atGetExecTime( _gCommandObj, CMD_SHA);
+
+		if ( (status != atcab_wakeup()) != ATCA_SUCCESS )
+			break;
+
+		// send the command
+		if ( (status = atsend( _gIface, (uint8_t*)&packet, packet.txsize )) != ATCA_SUCCESS )
+			break;
+
+		// delay the appropriate amount of time for command to execute
+		atca_delay_ms( execution_time );
+
+		// receive the response
+		if ( (status = atreceive( _gIface, packet.data, &(packet.rxsize))) != ATCA_SUCCESS )
+			break;
+
+		// Check response size
+		if (packet.rxsize < 4) {
+			if (packet.rxsize > 0)
+				status = ATCA_RX_FAIL;
+			else
+				status = ATCA_RX_NO_RESPONSE;
 			break;
 		}
+
+		// check for response
+		if ( (status = isATCAError(packet.data)) != ATCA_SUCCESS )
+			break;
 
 	} while (0);
 
@@ -2229,6 +2758,7 @@ ATCA_STATUS atcab_sha_update(uint16_t length, const uint8_t *message)
 {
 	ATCA_STATUS status = ATCA_GEN_FAIL;
 	ATCAPacket packet;
+	uint16_t execution_time = 0;
 
 	do {
 
@@ -2246,9 +2776,33 @@ ATCA_STATUS atcab_sha_update(uint16_t length, const uint8_t *message)
 		if ( (status = atSHA( _gCommandObj, &packet )) != ATCA_SUCCESS )
 			break;
 
-		if ((status = atcab_request(CMD_SHA, &packet, 0, 1)) != ATCA_SUCCESS) {
+		execution_time = atGetExecTime( _gCommandObj, CMD_SHA);
+
+		if ( (status != atcab_wakeup()) != ATCA_SUCCESS ) break;
+
+		// send the command
+		if ( (status = atsend( _gIface, (uint8_t*)&packet, packet.txsize )) != ATCA_SUCCESS )
+			break;
+
+		// delay the appropriate amount of time for command to execute
+		atca_delay_ms( execution_time );
+
+		// receive the response
+		if ( (status = atreceive( _gIface, packet.data, &(packet.rxsize))) != ATCA_SUCCESS )
+			break;
+
+		// Check response size
+		if (packet.rxsize < 4) {
+			if (packet.rxsize > 0)
+				status = ATCA_RX_FAIL;
+			else
+				status = ATCA_RX_NO_RESPONSE;
 			break;
 		}
+
+		// check for response
+		if ( (status = isATCAError(packet.data)) != ATCA_SUCCESS )
+			break;
 
 	} while (0);
 
@@ -2264,6 +2818,7 @@ ATCA_STATUS atcab_sha_end(uint8_t *digest, uint16_t length, const uint8_t *messa
 {
 	ATCA_STATUS status = ATCA_GEN_FAIL;
 	ATCAPacket packet;
+	uint16_t execution_time = 0;
 
 	if ( length > 63 || digest == NULL )
 		return ATCA_BAD_PARAM;
@@ -2288,9 +2843,33 @@ ATCA_STATUS atcab_sha_end(uint8_t *digest, uint16_t length, const uint8_t *messa
 		if ( (status = atSHA( _gCommandObj, &packet )) != ATCA_SUCCESS )
 			break;
 
-		if ((status = atcab_request(CMD_SHA, &packet, 0, 1)) != ATCA_SUCCESS) {
+		execution_time = atGetExecTime( _gCommandObj, CMD_SHA);
+
+		if ( (status != atcab_wakeup()) != ATCA_SUCCESS ) break;
+
+		// send the command
+		if ( (status = atsend( _gIface, (uint8_t*)&packet, packet.txsize )) != ATCA_SUCCESS )
+			break;
+
+		// delay the appropriate amount of time for command to execute
+		atca_delay_ms( execution_time );
+
+		// receive the response
+		if ( (status = atreceive( _gIface, packet.data, &(packet.rxsize))) != ATCA_SUCCESS )
+			break;
+
+		// Check response size
+		if (packet.rxsize < 4) {
+			if (packet.rxsize > 0)
+				status = ATCA_RX_FAIL;
+			else
+				status = ATCA_RX_NO_RESPONSE;
 			break;
 		}
+
+		// check for response
+		if ( (status = isATCAError(packet.data)) != ATCA_SUCCESS )
+			break;
 
 		memcpy( digest, &packet.data[ATCA_RSP_DATA_IDX], ATCA_SHA_DIGEST_SIZE );
 

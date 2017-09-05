@@ -61,13 +61,7 @@ extern "C" {
 
 // basic global device object methods
 ATCA_STATUS atcab_version( char *verstr );
-ATCA_STATUS atcab_init(
-#if defined(__TINY__)
-		const
-#endif
-		ATCAIfaceCfg *cfg
-		);
-
+ATCA_STATUS atcab_init(ATCAIfaceCfg *cfg);
 ATCA_STATUS atcab_init_device(ATCADevice cadevice);
 ATCA_STATUS atcab_release(void);
 ATCADevice atcab_getDevice(void);
@@ -133,8 +127,6 @@ ATCA_STATUS atcab_sha_start(void);
 ATCA_STATUS atcab_sha_update(uint16_t length, const uint8_t *message);
 ATCA_STATUS atcab_sha_end(uint8_t *digest, uint16_t length, const uint8_t *message);
 ATCA_STATUS atcab_sha(uint16_t length, const uint8_t *message, uint8_t *digest);
-
-typedef ATCA_STATUS (* atcab_request_t)(ATCA_CmdMap command, ATCAPacket * packet, uint8_t check_idle, uint8_t check_error);
 
 #ifdef __cplusplus
 }
