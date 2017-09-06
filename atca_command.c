@@ -85,12 +85,12 @@ const uint16_t exectimes_x08a[] = {   // in milleseconds
 	3,                          // CMD_PAUSE
 	48,                         // CMD_PRIVWRITE
 	23,                         // CMD_RANDOM with SEED Update mode takes ~21ms, high side of range
-	1,                          // CMD_READMEM
+	10,                          // CMD_READMEM
 	9,                          // CMD_SHA
 	60,                         // CMD_SIGN
 	10,                         // CMD_UPDATEEXTRA
 	72,                         // CMD_VERIFY
-	26                          // CMD_WRITE
+	50                          // CMD_WRITE
 };
 
 
