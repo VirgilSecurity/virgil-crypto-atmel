@@ -101,7 +101,7 @@ extern "C" {
  * \param[in]    format               Format to use.
  * \param[in]    timestamp            Timestamp to format.
  * \param[out]   formatted_date       Formatted date will be return in this buffer.
- * \param[inout] formatted_date_size  As input, the size of the formatted_date buffer.
+ * \param[in, out] formatted_date_size  As input, the size of the formatted_date buffer.
  *                                    As output, the size of the returned formatted_date.
  *
  * \return 0 on success
