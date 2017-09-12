@@ -75,7 +75,8 @@ ATCAIface newATCAIface(
 		ATCAIfaceCfg *cfg)  // constructor
 {
 #if defined(__TINY__)
-	interface.mIfaceCFG = cfg;
+	// It's done so because of code reducing.
+	interface.mIfaceCFG = (ATCAIfaceCfg *)cfg;
 
 	atinit(&interface);
 	return &interface;
