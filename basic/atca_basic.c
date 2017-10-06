@@ -48,6 +48,7 @@
  */
 
 
+#include <atca_iface.h>
 #include "atca_basic.h"
 #include "host/atca_host.h"
 
@@ -190,7 +191,10 @@ ATCA_STATUS atcab_sleep(void)
  */
 
 #define MAX_BUSES   4
-
+ATCA_STATUS atcab_cfg_select_device(int index)
+{
+	return hal_kit_hid_select_device(index);
+}
 ATCA_STATUS atcab_cfg_discover( ATCAIfaceCfg cfgArray[], int maxIfaces)
 {
 	int ifaceNum = 0, i;
@@ -255,9 +259,17 @@ ATCA_STATUS atcab_cfg_discover( ATCAIfaceCfg cfgArray[], int maxIfaces)
 	for ( i = 0; i < MAX_BUSES && ifaceNum < maxIfaces; i++ ) {
 		if ( hid_buses[i] != -1 ) {
 			hal_kit_hid_discover_devices( hid_buses[i], &cfgArray[ifaceNum++], &found);
+			for (int j = 0; j < found; j++)
+			{
+				memset(cfgArray[j].atcahid.guid, 0, sizeof(cfgArray[j].atcahid.guid));
+				hal_kit_hid_select_device(cfgArray[j].atcahid.idx-1);
+				atcab_read_serial_number(cfgArray[j].atcahid.guid);		
+			}
+			
 			ifaceNum += found;
 		}
 	}
+	memcpy(cfgArray[0].cfg_data, cfgArray, sizeof(ATCAIfaceCfg [10]));
 #endif
 
 	return ATCA_SUCCESS;

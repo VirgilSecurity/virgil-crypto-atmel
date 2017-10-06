@@ -128,6 +128,8 @@ ATCA_STATUS atcab_sha_update(uint16_t length, const uint8_t *message);
 ATCA_STATUS atcab_sha_end(uint8_t *digest, uint16_t length, const uint8_t *message);
 ATCA_STATUS atcab_sha(uint16_t length, const uint8_t *message, uint8_t *digest);
 
+ATCA_STATUS atcab_cfg_select_device(int index);
+	
 #ifdef __cplusplus
 }
 #endif
