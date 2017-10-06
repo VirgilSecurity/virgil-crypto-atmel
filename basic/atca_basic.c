@@ -591,7 +591,16 @@ ATCA_STATUS atcab_challenge_seed_update( const uint8_t *seed, uint8_t* rand_out 
  */
 ATCA_STATUS atcab_read_serial_number(uint8_t* serial_number)
 {
-	// read config zone bytes 0-3 and 4-7, concatenate the two bits into serial_number
+	memset(serial_number, 0x00, ATCA_SERIAL_NUM_SIZE);
+	uint8_t status = ATCA_GEN_FAIL;
+	uint8_t tmp[32];
+	if ( (status = atcab_read_zone(ATCA_ZONE_CONFIG, 0, 0, 0, tmp, ATCA_BLOCK_SIZE)) == ATCA_SUCCESS ) {
+		memcpy(serial_number,tmp,4);
+		memcpy(serial_number+4,tmp+8,5);
+	}
+	_atcab_exit();
+	return status;
+	/* read config zone bytes 0-3 and 4-7, concatenate the two bits into serial_number
 	uint8_t status = ATCA_GEN_FAIL;
 	uint8_t bytes_read[ATCA_BLOCK_SIZE];
 	uint8_t block = 0;
@@ -603,7 +612,9 @@ ATCA_STATUS atcab_read_serial_number(uint8_t* serial_number)
 		// Read first 32 byte block.  Copy the bytes into the config_data buffer
 		block = 0;
 		offset = 0;
-		if ( (status = atcab_read_zone(ATCA_ZONE_CONFIG, 0, block, offset, bytes_read, ATCA_WORD_SIZE)) != ATCA_SUCCESS )
+
+		break;
+		/*if ( (status = atcab_read_zone(ATCA_ZONE_CONFIG, 0, block, offset, bytes_read, ATCA_WORD_SIZE)) != ATCA_SUCCESS )
 			break;
 
 		memcpy(&serial_number[cpyIndex], bytes_read, ATCA_WORD_SIZE);
@@ -627,7 +638,7 @@ ATCA_STATUS atcab_read_serial_number(uint8_t* serial_number)
 	} while (0);
 
 	_atcab_exit();
-	return status;
+	return status;*/
 }
 
 /** \brief verify a signature using CryptoAuth hardware (as opposed to an ECDSA software implementation)
