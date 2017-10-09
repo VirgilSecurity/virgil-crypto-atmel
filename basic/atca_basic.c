@@ -47,7 +47,6 @@
  * \atmel_crypto_device_library_license_stop
  */
 
-
 #include <atca_iface.h>
 #include "atca_basic.h"
 #include "host/atca_host.h"
