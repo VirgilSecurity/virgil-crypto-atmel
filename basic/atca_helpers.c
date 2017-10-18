@@ -119,7 +119,7 @@ ATCA_STATUS atcab_hex2bin(const char* asciiHex, int asciiHexLen, uint8_t* binary
 		return ATCA_BAD_PARAM;
 
 	// Pack the bytes (remove white space & make even number of characters)
-	packedHex = (char*)malloc(packedLen);
+	packedHex = (char*)malloc(packedLen + 1);
 	memset(packedHex, 0, packedLen);
 	packHex(asciiHex, asciiHexLen, packedHex, &packedLen);
 
