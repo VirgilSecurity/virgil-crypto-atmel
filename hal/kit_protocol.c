@@ -76,16 +76,16 @@ ATCA_STATUS kit_init(ATCAIface iface)
 	int copysize = 0;
 
 	// Send the address bytes
-	status = kit_phy_send(iface, address, addresssize);
+	status = kit_phy_send(iface, (uint8_t *)address, addresssize);
 
 	// Receive the reply to address "...(C0)\n"
 	memset(reply, 0, replysize);
-	status = kit_phy_receive(iface, reply, &replysize);
+	status = kit_phy_receive(iface, (uint8_t *)reply, &replysize);
 	if (status != ATCA_SUCCESS) return ATCA_GEN_FAIL;
 
 	if (replysize == 4) {
 		// Probably an error
-		status = kit_parse_rsp(reply, replysize, &kitstatus, rxdata, &rxsize);
+		status = kit_parse_rsp(reply, replysize, &kitstatus, (uint8_t *)rxdata, &rxsize);
 		if (status != ATCA_SUCCESS)
 			return status;
 		if (kitstatus != 0)
@@ -102,11 +102,11 @@ ATCA_STATUS kit_init(ATCAIface iface)
 	copysize = (sizeof(selectaddresspre) + rxsize);
 	memcpy(&selectaddress[(copysize - 1)], selectaddresspost, sizeof(selectaddresspost));
 	copysize = (sizeof(selectaddresspre) + rxsize + sizeof(selectaddresspost));
-	status = kit_phy_send(iface, selectaddress, copysize);
+	status = kit_phy_send(iface, (uint8_t *)selectaddress, copysize);
 
 	// Receive the reply to select address "00()\n"
 	memset(reply, 0, replysize);
-	status = kit_phy_receive(iface, reply, &replysize);
+	status = kit_phy_receive(iface, (uint8_t *)reply, &replysize);
 	if (status != ATCA_SUCCESS) return ATCA_GEN_FAIL;
 
 	return status;
@@ -125,7 +125,7 @@ ATCA_STATUS kit_send(ATCAIface iface, uint8_t* txdata, int txlength)
 	char* pkitbuf = NULL;
 
 	// Check the pointers
-	if ((txdata == NULL))
+	if (txdata == NULL)
 		return ATCA_BAD_PARAM;
 	// Wrap in kit protocol
 	pkitbuf = malloc(nkitbuf);
@@ -136,7 +136,7 @@ ATCA_STATUS kit_send(ATCAIface iface, uint8_t* txdata, int txlength)
 		return ATCA_GEN_FAIL;
 	}
 	// Send the bytes
-	status = kit_phy_send(iface, pkitbuf, nkitbuf);
+	status = kit_phy_send(iface, (uint8_t *)pkitbuf, nkitbuf);
 
 #ifdef KIT_DEBUG
 	// Print the bytes
@@ -174,7 +174,7 @@ ATCA_STATUS kit_receive(ATCAIface iface, uint8_t* rxdata, uint16_t* rxsize)
 	memset(pkitbuf, 0, nkitbuf);
 
 	// Receive the bytes
-	status = kit_phy_receive(iface, pkitbuf, &nkitbuf);
+	status = kit_phy_receive(iface, (uint8_t *)pkitbuf, &nkitbuf);
 	if (status != ATCA_SUCCESS) {
 		free(pkitbuf);
 		return ATCA_GEN_FAIL;
@@ -212,7 +212,7 @@ ATCA_STATUS kit_wake(ATCAIface iface)
 	int rxsize = sizeof(rxdata);
 
 	// Send the bytes
-	status = kit_phy_send(iface, wake, wakesize);
+	status = kit_phy_send(iface, (uint8_t *)wake, wakesize);
 
 #ifdef KIT_DEBUG
 	// Print the bytes
@@ -221,7 +221,7 @@ ATCA_STATUS kit_wake(ATCAIface iface)
 
 	// Receive the reply to wake "00(04...)\n"
 	memset(reply, 0, replysize);
-	status = kit_phy_receive(iface, reply, &replysize);
+	status = kit_phy_receive(iface, (uint8_t *)reply, &replysize);
 	if (status != ATCA_SUCCESS) return ATCA_GEN_FAIL;
 
 #ifdef KIT_DEBUG
@@ -231,7 +231,7 @@ ATCA_STATUS kit_wake(ATCAIface iface)
 
 	// Unwrap from kit protocol
 	memset(rxdata, 0, rxsize);
-	status = kit_parse_rsp(reply, replysize, &kitstatus, rxdata, &rxsize);
+	status = kit_parse_rsp(reply, replysize, &kitstatus, (uint8_t *)rxdata, &rxsize);
 
 	return status;
 }
@@ -252,7 +252,7 @@ ATCA_STATUS kit_idle(ATCAIface iface)
 	int rxsize = sizeof(rxdata);
 
 	// Send the bytes
-	status = kit_phy_send(iface, idle, idlesize);
+	status = kit_phy_send(iface, (uint8_t *)idle, idlesize);
 
 #ifdef KIT_DEBUG
 	// Print the bytes
@@ -261,7 +261,7 @@ ATCA_STATUS kit_idle(ATCAIface iface)
 
 	// Receive the reply to sleep "00()\n"
 	memset(reply, 0, replysize);
-	status = kit_phy_receive(iface, reply, &replysize);
+	status = kit_phy_receive(iface, (uint8_t *)reply, &replysize);
 	if (status != ATCA_SUCCESS) return ATCA_GEN_FAIL;
 
 #ifdef KIT_DEBUG
@@ -271,7 +271,7 @@ ATCA_STATUS kit_idle(ATCAIface iface)
 
 	// Unwrap from kit protocol
 	memset(rxdata, 0, rxsize);
-	status = kit_parse_rsp(reply, replysize, &kitstatus, rxdata, &rxsize);
+	status = kit_parse_rsp(reply, replysize, &kitstatus, (uint8_t *)rxdata, &rxsize);
 
 	return status;
 }
@@ -292,7 +292,7 @@ ATCA_STATUS kit_sleep(ATCAIface iface)
 	int rxsize = sizeof(rxdata);
 
 	// Send the bytes
-	status = kit_phy_send(iface, sleep, sleepsize);
+	status = kit_phy_send(iface, (uint8_t *)sleep, sleepsize);
 
 #ifdef KIT_DEBUG
 	// Print the bytes
@@ -301,7 +301,7 @@ ATCA_STATUS kit_sleep(ATCAIface iface)
 
 	// Receive the reply to sleep "00()\n"
 	memset(reply, 0, replysize);
-	status = kit_phy_receive(iface, reply, &replysize);
+	status = kit_phy_receive(iface, (uint8_t *)reply, &replysize);
 	if (status != ATCA_SUCCESS) return ATCA_GEN_FAIL;
 
 #ifdef KIT_DEBUG
@@ -311,7 +311,7 @@ ATCA_STATUS kit_sleep(ATCAIface iface)
 
 	// Unwrap from kit protocol
 	memset(rxdata, 0, rxsize);
-	status = kit_parse_rsp(reply, replysize, &kitstatus, rxdata, &rxsize);
+	status = kit_parse_rsp(reply, replysize, &kitstatus, (uint8_t *)rxdata, &rxsize);
 
 	return status;
 }
